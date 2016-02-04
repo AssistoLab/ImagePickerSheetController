@@ -69,7 +69,10 @@ public class ImagePickerSheetController: UIViewController {
     
     /// Maximum selection of images.
     public var maximumSelection: Int?
-    
+	
+	/// Action triggered when user tries to select more images than authorized in ``.
+	public var maximumSelectionReached: (() -> Void)?
+	
     private var selectedImageIndices = [Int]() {
         didSet {
             sheetController.numberOfSelectedImages = selectedImageIndices.count
@@ -401,10 +404,9 @@ extension ImagePickerSheetController: UICollectionViewDelegate {
     
     public func collectionView(collectionView: UICollectionView, didSelectItemAtIndexPath indexPath: NSIndexPath) {
         if let maximumSelection = maximumSelection {
-            if selectedImageIndices.count >= maximumSelection,
-                let previousItemIndex = selectedImageIndices.first {
-                    supplementaryViews[previousItemIndex]?.selected = false
-                    selectedImageIndices.removeAtIndex(0)
+            if selectedImageIndices.count >= maximumSelection && selectedImageIndices.first != nil {
+				maximumSelectionReached?()
+				return
             }
         }
         
