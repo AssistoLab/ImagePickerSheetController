@@ -9,7 +9,7 @@
 import Foundation
 import Photos
 
-private let previewCollectionViewInset: CGFloat = 5
+let previewInset: CGFloat = 5
 
 /// The media type an instance of ImagePickerSheetController can display
 public enum ImagePickerMediaType {
@@ -24,7 +24,11 @@ public class ImagePickerSheetController: UIViewController {
     private lazy var sheetController: SheetController = {
         let controller = SheetController(previewCollectionView: self.previewCollectionView)
         controller.actionHandlingCallback = { [weak self] in
-            self?.dismissViewControllerAnimated(true, completion: nil)
+            self?.dismissViewControllerAnimated(true, completion: { _ in
+                // Possible retain cycle when action handlers hold a reference to the IPSC
+                // Remove all actions to break it
+                controller.removeAllActions()
+            })
         }
         
         return controller
@@ -39,7 +43,7 @@ public class ImagePickerSheetController: UIViewController {
         collectionView.accessibilityIdentifier = "ImagePickerSheetPreview"
         collectionView.backgroundColor = .clearColor()
         collectionView.allowsMultipleSelection = true
-        collectionView.imagePreviewLayout.sectionInset = UIEdgeInsetsMake(previewCollectionViewInset, previewCollectionViewInset, previewCollectionViewInset, previewCollectionViewInset)
+        collectionView.imagePreviewLayout.sectionInset = UIEdgeInsets(top: previewInset, left: previewInset, bottom: previewInset, right: previewInset)
         collectionView.imagePreviewLayout.showsSupplementaryViews = false
         collectionView.dataSource = self
         collectionView.delegate = self
@@ -57,7 +61,7 @@ public class ImagePickerSheetController: UIViewController {
         let view = UIView()
         view.accessibilityIdentifier = "ImagePickerSheetBackground"
         view.backgroundColor = UIColor(white: 0.0, alpha: 0.3961)
-        view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: "cancel"))
+        view.addGestureRecognizer(UITapGestureRecognizer(target: self.sheetController, action: #selector(SheetController.handleCancelAction)))
         
         return view
     }()
@@ -107,10 +111,6 @@ public class ImagePickerSheetController: UIViewController {
     private var maximumPreviewHeight: CGFloat = 129
     
     private var previewCheckmarkInset: CGFloat {
-        guard #available(iOS 9, *) else {
-            return 3.5
-        }
-        
         return 12.5
     }
     
@@ -132,11 +132,11 @@ public class ImagePickerSheetController: UIViewController {
         modalPresentationStyle = .Custom
         transitioningDelegate = self
         
-        NSNotificationCenter.defaultCenter().addObserver(self, selector: "cancel", name: UIApplicationDidEnterBackgroundNotification, object: nil)
+        NSNotificationCenter.defaultCenter().addObserver(sheetController, selector: #selector(SheetController.handleCancelAction), name: UIApplicationDidEnterBackgroundNotification, object: nil)
     }
     
     deinit {
-        NSNotificationCenter.defaultCenter().removeObserver(self)
+        NSNotificationCenter.defaultCenter().removeObserver(sheetController, name: UIApplicationDidEnterBackgroundNotification, object: nil)
     }
     
     // MARK: - View Lifecycle
@@ -192,16 +192,12 @@ public class ImagePickerSheetController: UIViewController {
         view.setNeedsLayout()
     }
     
-    @objc private func cancel() {
-        sheetController.handleCancelAction()
-    }
-    
     // MARK: - Images
     
     private func sizeForAsset(asset: PHAsset, scale: CGFloat = 1) -> CGSize {
         let proportion = CGFloat(asset.pixelWidth)/CGFloat(asset.pixelHeight)
     
-        let imageHeight = maximumPreviewHeight - 2 * previewCollectionViewInset
+        let imageHeight = maximumPreviewHeight - 2 * previewInset
         let imageWidth = floor(proportion * imageHeight)
         
         return CGSize(width: imageWidth * scale, height: imageHeight * scale)
@@ -212,7 +208,7 @@ public class ImagePickerSheetController: UIViewController {
         reloadMaximumPreviewHeight()
         reloadCurrentPreviewHeight(invalidateLayout: false)
         
-        // Filter out the assets that are too thin. This can't be done before becuase
+        // Filter out the assets that are too thin. This can't be done before because
         // we don't know how tall the images should be
         let minImageWidth = 2 * previewCheckmarkInset + (PreviewSupplementaryView.checkmarkImage?.size.width ?? 0)
         assets = assets.filter { asset in
@@ -235,9 +231,7 @@ public class ImagePickerSheetController: UIViewController {
         }
         
         let fetchLimit = 50
-        if #available(iOS 9, *) {
-            options.fetchLimit = fetchLimit
-        }
+        options.fetchLimit = fetchLimit
         
         let result = PHAsset.fetchAssetsWithOptions(options)
         let requestOptions = PHImageRequestOptions()
@@ -289,7 +283,19 @@ public class ImagePickerSheetController: UIViewController {
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         
-        backgroundView.frame = view.bounds
+        if popoverPresentationController == nil {
+            // Offset necessary for expanded status bar
+            // Bug in UIKit which doesn't reset the view's frame correctly
+            
+            let offset = UIApplication.sharedApplication().statusBarFrame.height
+            var backgroundViewFrame = UIScreen.mainScreen().bounds
+            backgroundViewFrame.origin.y = -offset
+            backgroundViewFrame.size.height += offset
+            backgroundView.frame = backgroundViewFrame
+        }
+        else {
+            backgroundView.frame = view.bounds
+        }
         
         reloadMaximumPreviewHeight()
         reloadCurrentPreviewHeight(invalidateLayout: true)
@@ -300,7 +306,7 @@ public class ImagePickerSheetController: UIViewController {
         // This particular order is necessary so that the sheet is layed out
         // correctly with and without an enclosing popover
         preferredContentSize = sheetSize
-        sheetCollectionView.frame = CGRect(origin: CGPoint(x: view.bounds.minX, y: view.bounds.maxY-sheetHeight), size: sheetSize)
+        sheetCollectionView.frame = CGRect(origin: CGPoint(x: view.bounds.minX, y: view.bounds.maxY - view.frame.origin.y - sheetHeight), size: sheetSize)
     }
     
     private func reloadCurrentPreviewHeight(invalidateLayout invalidate: Bool) {
@@ -317,19 +323,28 @@ public class ImagePickerSheetController: UIViewController {
     
     private func reloadMaximumPreviewHeight() {
         let maxHeight: CGFloat = 400
-        let maxImageWidth = sheetController.preferredSheetWidth - 2 * previewCollectionViewInset
+        let maxImageWidth = view.bounds.width - 2 * sheetInset - 2 * previewInset
 
-        let assetRatios = assets.map { CGSize(width: max($0.pixelHeight, $0.pixelWidth), height: min($0.pixelHeight, $0.pixelWidth)) }
-                                .map { $0.height / $0.width }
-            
-        let assetHeights = assetRatios.map { $0 * maxImageWidth }
-                                      .filter { $0 < maxImageWidth && $0 < maxHeight } // Make sure the preview isn't too high eg for squares
+        let assetRatios = assets.map { (asset: PHAsset) -> CGSize in
+                CGSize(width: max(asset.pixelHeight, asset.pixelWidth), height: min(asset.pixelHeight, asset.pixelWidth))
+            }.map { (size: CGSize) -> CGFloat in
+                size.height / size.width
+            }
+
+        let assetHeights = assetRatios.map { (ratio: CGFloat) -> CGFloat in ratio * maxImageWidth }
+                                      .filter { (height: CGFloat) -> Bool in height < maxImageWidth && height < maxHeight } // Make sure the preview isn't too high eg for squares
                                       .sort(>)
-        let assetHeight = ceil(assetHeights.first ?? 0)
-        
+        let assetHeight: CGFloat
+        if let first = assetHeights.first {
+            assetHeight = first
+        }
+        else {
+            assetHeight = 0
+        }
+
         // Just a sanity check, to make sure this doesn't exceed 400 points
-        let scaledHeight = max(min(assetHeight, maxHeight), 200)
-        maximumPreviewHeight = scaledHeight + 2 * previewCollectionViewInset
+        let scaledHeight: CGFloat = min(assetHeight, maxHeight)
+        maximumPreviewHeight = scaledHeight + 2 * previewInset
     }
     
     // MARK: -
@@ -341,17 +356,9 @@ public class ImagePickerSheetController: UIViewController {
         
         view.setNeedsLayout()
         
-        let animationDuration: NSTimeInterval
-        if #available(iOS 9, *) {
-            animationDuration = 0.2
-        }
-        else {
-            animationDuration = 0.3
-        }
-        
-        UIView.animateWithDuration(animationDuration, animations: {
-            self.sheetCollectionView.reloadSections(NSIndexSet(index: 0))
+        UIView.animateWithDuration(0.2, animations: {
             self.view.layoutIfNeeded()
+            self.sheetCollectionView.collectionViewLayout.invalidateLayout()
         }, completion: completion)
     }
     
@@ -456,7 +463,7 @@ extension ImagePickerSheetController: UICollectionViewDelegateFlowLayout {
         let size = sizeForAsset(asset)
         
         // Scale down to the current preview height, sizeForAsset returns the original size
-        let currentImagePreviewHeight = sheetController.previewHeight - 2 * previewCollectionViewInset
+        let currentImagePreviewHeight = sheetController.previewHeight - 2 * previewInset
         let scale = currentImagePreviewHeight / size.height
         
         return CGSize(width: size.width * scale, height: currentImagePreviewHeight)
@@ -464,7 +471,7 @@ extension ImagePickerSheetController: UICollectionViewDelegateFlowLayout {
 
     public func collectionView(collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, referenceSizeForHeaderInSection section: Int) -> CGSize {
         let checkmarkWidth = PreviewSupplementaryView.checkmarkImage?.size.width ?? 0
-        return CGSizeMake(checkmarkWidth + 2 * previewCheckmarkInset, sheetController.previewHeight - 2 * previewCollectionViewInset)
+        return CGSizeMake(checkmarkWidth + 2 * previewCheckmarkInset, sheetController.previewHeight - 2 * previewInset)
     }
     
 }

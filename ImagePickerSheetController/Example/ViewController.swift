@@ -12,16 +12,23 @@ import ImagePickerSheetController
 
 class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     
-    // MARK: View Lifecycle
+    // MARK: - View Lifecycle
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        let tapRecognizer = UITapGestureRecognizer(target: self, action: "presentImagePickerSheet:")
-        view.addGestureRecognizer(tapRecognizer)
+        let button = UIButton(type: .System)
+        button.setTitle("Tap Me!", forState: .Normal)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(button)
+        button.heightAnchor.constraintEqualToConstant(40).active = true
+        button.widthAnchor.constraintEqualToConstant(150).active = true
+        button.centerXAnchor.constraintEqualToAnchor(view.centerXAnchor).active = true
+        button.centerYAnchor.constraintEqualToAnchor(view.centerYAnchor).active = true
+        button.addTarget(self, action: #selector(presentImagePickerSheet(_:)), forControlEvents: .TouchUpInside)
     }
     
-    // MARK: Other Methods
+    // MARK: - Other Methods
     
     func presentImagePickerSheet(gestureRecognizer: UITapGestureRecognizer) {
         let presentImagePickerController: UIImagePickerControllerSourceType -> () = { source in
@@ -48,9 +55,7 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
         }, secondaryHandler: { _, numberOfPhotos in
             print("Send \(controller.selectedImageAssets)")
         }))
-        controller.addAction(ImagePickerAction(title: NSLocalizedString("Cancel", comment: "Action Title"), style: .Cancel, handler: { _ in
-            print("Cancelled")
-        }))
+        controller.addAction(ImagePickerAction(cancelTitle: NSLocalizedString("Cancel", comment: "Action Title")))
         
         if UIDevice.currentDevice().userInterfaceIdiom == .Pad {
             controller.modalPresentationStyle = .Popover
@@ -61,7 +66,7 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
         presentViewController(controller, animated: true, completion: nil)
     }
     
-    // MARK: UIImagePickerControllerDelegate
+    // MARK: - UIImagePickerControllerDelegate
     
     func imagePickerControllerDidCancel(picker: UIImagePickerController) {
         dismissViewControllerAnimated(true, completion: nil)

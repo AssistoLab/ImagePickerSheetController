@@ -8,7 +8,7 @@
 
 import UIKit
 
-private let defaultInset: CGFloat = 10
+let sheetInset: CGFloat = 10
 
 class SheetController: NSObject {
     
@@ -40,13 +40,6 @@ class SheetController: NSObject {
             .reduce(0, combine: +)
     }
     
-    var preferredSheetWidth: CGFloat {
-        guard #available(iOS 9, *) else {
-            return sheetCollectionView.bounds.width
-        }
-        return sheetCollectionView.bounds.width - 2 * defaultInset
-    }
-    
     // MARK: - Initialization
     
     init(previewCollectionView: PreviewCollectionView) {
@@ -72,9 +65,9 @@ class SheetController: NSObject {
     
     private func allIndexPaths() -> [NSIndexPath] {
         let s = numberOfSections()
-        return (0 ..< s).map { (self.numberOfItemsInSection($0), $0) }
-                        .flatMap { numberOfItems, section in
-                            (0 ..< numberOfItems).map { NSIndexPath(forItem: $0, inSection: section) }
+        return (0 ..< s).map { (section: Int) -> (Int, Int) in (self.numberOfItemsInSection(section), section) }
+                        .flatMap { (numberOfItems: Int, section: Int) -> [NSIndexPath] in
+                            (0 ..< numberOfItems).map { (item: Int) -> NSIndexPath in NSIndexPath(forItem: item, inSection: section) }
                         }
     }
     
@@ -84,14 +77,7 @@ class SheetController: NSObject {
                 return previewHeight
             }
             
-            let actionItemHeight: CGFloat
-            
-            if #available(iOS 9, *) {
-                actionItemHeight = 57
-            }
-            else {
-                actionItemHeight = 50
-            }
+            let actionItemHeight: CGFloat = 57
             
             let insets = attributesForItemAtIndexPath(indexPath).backgroundInsets
             return actionItemHeight + insets.top + insets.bottom
@@ -103,16 +89,12 @@ class SheetController: NSObject {
     // MARK: - Design
     
     private func attributesForItemAtIndexPath(indexPath: NSIndexPath) -> (corners: RoundedCorner, backgroundInsets: UIEdgeInsets) {
-        guard #available(iOS 9, *) else {
-            return (.None, UIEdgeInsets())
-        }
-        
         let cornerRadius: CGFloat = 13
         let innerInset: CGFloat = 4
         var indexPaths = allIndexPaths()
         
         guard indexPaths.first != indexPath else {
-            return (.Top(cornerRadius), UIEdgeInsets(top: 0, left: defaultInset, bottom: 0, right: defaultInset))
+            return (.Top(cornerRadius), UIEdgeInsets(top: 0, left: sheetInset, bottom: 0, right: sheetInset))
         }
         
         let cancelIndexPath = actions.indexOf { $0.style == ImagePickerActionStyle.Cancel }
@@ -121,28 +103,27 @@ class SheetController: NSObject {
         
         if let cancelIndexPath = cancelIndexPath {
             if cancelIndexPath == indexPath {
-                return (.All(cornerRadius), UIEdgeInsets(top: innerInset, left: defaultInset, bottom: defaultInset, right: defaultInset))
+                return (.All(cornerRadius), UIEdgeInsets(top: innerInset, left: sheetInset, bottom: sheetInset, right: sheetInset))
             }
             
             indexPaths.removeLast()
             
             if indexPath == indexPaths.last {
-                return (.Bottom(cornerRadius), UIEdgeInsets(top: 0, left: defaultInset, bottom: innerInset, right: defaultInset))
+                return (.Bottom(cornerRadius), UIEdgeInsets(top: 0, left: sheetInset, bottom: innerInset, right: sheetInset))
             }
         }
         else if indexPath == indexPaths.last {
-            return (.Bottom(cornerRadius), UIEdgeInsets(top: 0, left: defaultInset, bottom: defaultInset, right: defaultInset))
+            return (.Bottom(cornerRadius), UIEdgeInsets(top: 0, left: sheetInset, bottom: sheetInset, right: sheetInset))
         }
         
-        return (.None, UIEdgeInsets(top: 0, left: defaultInset, bottom: 0, right: defaultInset))
+        return (.None, UIEdgeInsets(top: 0, left: sheetInset, bottom: 0, right: sheetInset))
     }
     
     private func fontForAction(action: ImagePickerAction) -> UIFont {
-        guard #available(iOS 9, *), action.style == .Cancel else {
-            return UIFont.systemFontOfSize(21)
+        if action.style == .Cancel {
+            return UIFont.boldSystemFontOfSize(21)
         }
-        
-        return UIFont.boldSystemFontOfSize(21)
+        return UIFont.systemFontOfSize(21)
     }
     
     // MARK: - Actions
@@ -166,13 +147,18 @@ class SheetController: NSObject {
         reloadActionItems()
     }
     
+    func removeAllActions() {
+        actions = []
+        reloadActionItems()
+    }
+    
     private func handleAction(action: ImagePickerAction) {
         actionHandlingCallback?()
         action.handle(numberOfSelectedImages)
     }
     
     func handleCancelAction() {
-        let cancelAction = actions.filter { $0.style == ImagePickerActionStyle.Cancel }
+        let cancelAction = actions.filter { $0.style == .Cancel }
                                   .first
         
         if let cancelAction = cancelAction {
@@ -226,16 +212,9 @@ extension SheetController: UICollectionViewDataSource {
         
         // iOS specific design
         (cell.roundedCorners, cell.backgroundInsets) = attributesForItemAtIndexPath(indexPath)
-        if #available(iOS 9, *) {
-            cell.normalBackgroundColor = UIColor(white: 0.97, alpha: 1)
-            cell.highlightedBackgroundColor = UIColor(white: 0.92, alpha: 1)
-            cell.separatorColor = UIColor(white: 0.84, alpha: 1)
-        }
-        else {
-            cell.normalBackgroundColor = .whiteColor()
-            cell.highlightedBackgroundColor = UIColor(white: 0.85, alpha: 1)
-            cell.separatorColor = UIColor(white: 0.784, alpha: 1)
-        }
+        cell.normalBackgroundColor = UIColor(white: 0.97, alpha: 1)
+        cell.highlightedBackgroundColor = UIColor(white: 0.92, alpha: 1)
+        cell.separatorColor = UIColor(white: 0.84, alpha: 1)
         
         return cell
     }
