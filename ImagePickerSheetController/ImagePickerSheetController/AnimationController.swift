@@ -56,6 +56,10 @@ class AnimationController: NSObject {
 extension AnimationController: UIViewControllerAnimatedTransitioning {
     
     func transitionDuration(transitionContext: UIViewControllerContextTransitioning?) -> NSTimeInterval {
+        guard #available(iOS 9, *) else {
+            return 0.3
+        }
+        
         return 0.25
     }
     
