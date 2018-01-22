@@ -30,7 +30,7 @@ class ViewController: UIViewController {
     
     // MARK: - Other Methods
     
-    func presentImagePickerSheet(_ gestureRecognizer: UITapGestureRecognizer) {
+    @objc func presentImagePickerSheet(_ gestureRecognizer: UITapGestureRecognizer) {
         let presentImagePickerController: (UIImagePickerControllerSourceType) -> () = { source in
             let controller = UIImagePickerController()
             controller.delegate = self

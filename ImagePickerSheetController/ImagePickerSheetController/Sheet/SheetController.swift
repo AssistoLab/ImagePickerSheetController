@@ -173,7 +173,7 @@ class SheetController: NSObject {
         action.handle(numberOfSelectedImages)
     }
     
-    func handleCancelAction() {
+    @objc func handleCancelAction() {
         let cancelAction = actions.filter { $0.style == .cancel }
                                   .first
         
